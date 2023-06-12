@@ -123,9 +123,6 @@ amqp.connect('amqps://pepqwzfo:QdtFkPU3RuBGMfsFlMiXPlI0JylxB1nu@rat.rmq2.cloudam
 
 app.post('/messaging', (req, res) => {
 
-    var args = 25;
-    const post = req.body;
-
     const user = JSON.parse(req.headers['user']);
     try {
         const now = new Date();
@@ -133,12 +130,13 @@ app.post('/messaging', (req, res) => {
         const formattedTimestamp = now.toISOString().slice(0, 19).replace('T', ' ');
         const sql = `INSERT INTO postsdb.posts (userId, projectId, moderatorId, status, timestamp)
         VALUES (${user.id}, '${req.body.projectId}', 0, '${StatusEnum.PENDING}', '${formattedTimestamp}')`;
-        pool.query(sql, (err, res) => {
+        pool.query(sql, (err, response) => {
             if (err) {
                 console.log(err);
+                res.status(500).send();
             }
             else {
-                insertId = res.insertId;
+                insertId = response.insertId;
                 // console.log("insertId:", insertId);ss
                 const correlationId = generateUuid();
                 correlationIds.push(correlationId);
@@ -147,18 +145,14 @@ app.post('/messaging', (req, res) => {
                     replyTo: qu.queue
                 });
                 // console.log("result: ", res)
+                res.status(201).send();
             }
         })
         // console.log(consumedChannel)
 
-        res.status(201).send();
+        
     } catch {
         res.status(500).send();
-    }
-
-    if (args.length === 0) {
-        console.log("Usage: rpc_client.js num");
-        process.exit(1);
     }
 })
 
