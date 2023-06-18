@@ -49,7 +49,7 @@ jobs:
 
       - name: Build Docker Image
         run:
-          docker build -t europe-west4-docker.pkg.dev/portifycloud/authentication-repo/authentication:v1 .
+          docker build -t europe-west4-docker.pkg.dev/portifycloud/posts-repo/posts:v1 .
       
       - name: Verify Docker Image
         run:
@@ -57,14 +57,14 @@ jobs:
 
       - name: Push Image to Registry
         run:
-          docker push europe-west4-docker.pkg.dev/portifycloud/authentication-repo/authentication:v1 
+          docker push europe-west4-docker.pkg.dev/portifycloud/posts-repo/posts:v1 
 
       - name: Deploy to GKE Cluster
         run: |
           gcloud components install gke-gcloud-auth-plugin
           gcloud container clusters get-credentials authentication-cluster --zone europe-west4
           sleep 5s
-          kubectl set image deployment/authentication authentication=europe-west4-docker.pkg.dev/portifycloud/authentication-repo/authentication:v1 
+          kubectl set image deployment/posts posts=europe-west4-docker.pkg.dev/portifycloud/posts-repo/posts:v1 
 
 
 # name: Build and Push Python Image to Google Cloud Platform
