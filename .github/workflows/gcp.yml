@@ -1,0 +1,239 @@
+name: Build and Deploy to GKE
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  build:
+    name: Setup, Publish, and Deploy
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v2
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v2
+        with:
+          node-version: '14'
+
+      - name: Install Dependencies
+        run: npm install
+  
+  # Test the key
+      - name: Debug API Key
+        run: echo "${{ secrets.GKE_SA_KEY }}"
+      
+  # Authentication to google cloud services
+      - name: Auth
+        id: 'auth'
+        uses: 'google-github-actions/auth@v1.0.0'
+        with:
+          credentials_json: '${{ secrets.GKE_SA_KEY }}'
+          token_format: 'access_token'
+          create_credentials_file: true
+          
+  # Setting up tools for iteracting with google cloud services
+      - name: 'Set up Cloud SDK'
+        uses: 'google-github-actions/setup-gcloud@v0'
+        
+  #Check google cloud connection
+      - name: 'Use gcloud CLI'
+        run: 'gcloud info'
+
+      - name: Auth to google cloud services
+        run: |
+          gcloud auth login --brief --cred-file=${{ steps.auth.outputs.credentials_file_path }}
+          gcloud auth configure-docker europe-west4-docker.pkg.dev
+
+      - name: Build Docker Image
+        run:
+          docker build -t europe-west4-docker.pkg.dev/portifycloud/authentication-repo/authentication:v1 .
+      
+      - name: Verify Docker Image
+        run:
+          docker images
+
+      - name: Push Image to Registry
+        run:
+          docker push europe-west4-docker.pkg.dev/portifycloud/authentication-repo/authentication:v1 
+
+      - name: Deploy to GKE Cluster
+        run: |
+          gcloud components install gke-gcloud-auth-plugin
+          gcloud container clusters get-credentials authentication-cluster --zone europe-west4
+          sleep 5s
+          kubectl set image deployment/authentication authentication=europe-west4-docker.pkg.dev/portifycloud/authentication-repo/authentication:v1 
+
+
+# name: Build and Push Python Image to Google Cloud Platform
+# on:
+#   push:
+#     branches: [ main ]
+# jobs:
+#   build-push-gcr:
+#     name: Build and Push to GCP
+#     runs-on: ubuntu-latest
+#     env:
+#       IMAGE_NAME: authentication
+#       PROJECT_ID: portify-389116
+#     steps:
+#     - name: Checkout
+#       uses: actions/checkout@v2
+
+#     - uses: google-github-actions/setup-gcloud@v1
+#       with:
+#         service_account_key: ${{ secrets.GKE_SA_KEY }}
+#         project_id: ${{ env.PROJECT_ID }}
+#         export_default_credentials: true
+
+#     - name: Build Docker Image
+#       run: docker build -t $IMAGE_NAME:latest .
+
+#     - name: Automatic Tagging of Releases
+#       id: increment-git-tag
+#       run: |
+#         bash ./scripts/git_update.sh -v major
+
+#     - name: Configure Docker Client
+#       run: |-
+#         gcloud auth configure-docker --quiet
+#         gcloud auth configure-docker us-west2-docker.pkg.dev --quiet
+
+#     - name: Push Docker Image to Container Registry (GCR)
+#       env:
+#         GIT_TAG: ${{ steps.increment-git-tag.outputs.git-tag }}
+#       run: |-
+#         docker tag $IMAGE_NAME:latest gcr.io/$PROJECT_ID/$IMAGE_NAME:latest
+#         docker tag $IMAGE_NAME:latest gcr.io/$PROJECT_ID/$IMAGE_NAME:$GIT_TAG
+#         docker push gcr.io/$PROJECT_ID/$IMAGE_NAME:latest
+#         docker push gcr.io/$PROJECT_ID/$IMAGE_NAME:$GIT_TAG
+
+#     - name: Push Docker Image to Artifact Registry
+#       env:
+#         GIT_TAG: ${{ steps.increment-git-tag.outputs.git-tag }}
+#       run: |-
+#         docker tag $IMAGE_NAME:latest us-west2-docker.pkg.dev/$PROJECT_ID/images/$IMAGE_NAME:latest
+#         docker tag $IMAGE_NAME:latest us-west2-docker.pkg.dev/$PROJECT_ID/images/$IMAGE_NAME:$GIT_TAG
+#         docker push us-west2-docker.pkg.dev/$PROJECT_ID/images/$IMAGE_NAME:latest
+#         docker push us-west2-docker.pkg.dev/$PROJECT_ID/images/$IMAGE_NAME:$GIT_TAG
+
+
+# name: Build and Push Python Image to Google Cloud Platform
+# on:
+#   push:
+#     branches: [ main ]
+# env:
+#   PROJECT_ID: ${{ secrets.GKE_PROJECT }}
+#   GKE_CLUSTER: portify-k8   # put your cluster name here
+#   GKE_ZONE: us-central1      # put your cluster zone here
+#   IMAGE: gcr.io/${{ secrets.GKE_PROJECT }}/authentication  # put your app name here
+
+# jobs:
+#   deploy:
+#     runs-on: ubuntu-latest
+
+#     steps:
+#     - name: Checkout
+#       uses: actions/checkout@v2
+
+#     - name: Print environment variables
+#       run: |
+#         echo "PROJECT_ID: $PROJECT_ID"
+#         echo "GKE_CLUSTER: $GKE_CLUSTER"
+#         echo "GKE_ZONE: $GKE_ZONE"
+#         echo "IMAGE: $IMAGE"
+
+#     - name: Set up Cloud SDK
+#       uses: google-github-actions/setup-gcloud@v0.2.1
+#       with:
+#         project_id: ${{ secrets.GKE_PROJECT }}
+#         service_account_key: ${{ secrets.GKE_SA_KEY }}
+#         export_default_credentials: true
+
+#     - name: Install gke-gcloud-auth-plugin
+#       run: |
+#         curl -LO https://storage.googleapis.com/gke-release/auth-plugins/gke-gcloud-auth-plugin.tar.gz
+#         tar xzf gke-gcloud-auth-plugin.tar.gz
+#         sudo mv gke-gcloud-auth-plugin /usr/local/bin
+#         rm gke-gcloud-auth-plugin.tar.gz
+
+#     - name: Configure Docker
+#       run: |
+#         gcloud --quiet auth configure-docker
+
+#     - name: Build and push Docker image
+#       run: |
+#         docker build --build-arg IMAGE="$IMAGE" -t "$IMAGE:latest" .
+#         docker push "$IMAGE:latest"
+
+#     - name: Update Kubernetes deployment
+#       run: |
+#         gcloud container clusters get-credentials "$GKE_CLUSTER" --zone "$GKE_ZONE"
+#         kubectl set image deployment/node-app node-app="$IMAGE:latest"
+
+
+
+  # security-check:
+    #   runs-on: ubuntu-latest
+    #   steps:
+    #     - name: Checkout
+    #       uses: actions/checkout@v2
+        
+    #     - name: Run Anchore Container Scan
+    #       uses: anchore/scan-action@v3
+    #       with:
+    #         dockerfile-path: './dockerfile'
+  
+    # quality-check:
+    #   runs-on: ubuntu-latest
+    #   steps:
+    #     - name: Checkout
+    #       uses: actions/checkout@v2
+        
+    #     - name: Run ESLint
+    #       uses: wagoid/commitlint-github-action@v3
+
+  # build-and-deploy:
+  #   # needs: [security-check, quality-check]
+  #   runs-on: ubuntu-latest
+  #   steps:
+  #     - name: Build and push Docker image
+  #       uses: docker/build-push-action@v2
+  #       with:
+  #         context: .
+  #         push: true
+  #         tags: ${{ env.IMAGE }}:latest
+  #       env:
+  #         SECRET_KEY_1: ${{ secrets.SECRET_KEY_1 }}
+  #         SECRET_KEY_2: ${{ secrets.SECRET_KEY_2 }}
+  #     - name: Checkout
+  #       uses: actions/checkout@v2
+
+  #     - name: Set up Docker Buildx
+  #       uses: docker/setup-buildx-action@v1
+
+  #     - name: Build and push Docker image
+  #       uses: docker/build-push-action@v2
+  #       with:
+  #         context: .
+  #         push: true
+  #         tags: ${{ env.IMAGE }}:latest
+
+  #     - name: Setup Google Cloud SDK
+  #       uses: google-github-actions/setup-gcloud@v0.2.1
+  #       with:
+  #         project_id: ${{ env.PROJECT_ID }}
+  #         service_account_key: ${{ secrets.GKE_SA_KEY }}
+  #         export_default_credentials: true
+
+  #     - name: Deploy to GKE
+  #       uses: google-github-actions/deploy-gke@v0.2.0
+  #       with:
+  #         credentials: ${{ secrets.GKE_SA_KEY }}
+  #         project_id: ${{ env.PROJECT_ID }}
+  #         name: ${{ env.GKE_CLUSTER }}
+  #         location: ${{ env.GKE_ZONE }}
+  #         manifest: deployment.yaml
+  #         images: ${{ env.IMAGE }}=${{ env.IMAGE }}:latest

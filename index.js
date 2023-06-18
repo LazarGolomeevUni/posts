@@ -56,7 +56,7 @@ app.get('/posts', (req, res) => {
 })
 
 //GET posts of particular user
-app.get("/post", (req, res) => {
+app.get("/everything", (req, res) => {
     const user = JSON.parse(req.headers['user']);
     console.log(user)
     pool.query(`select * from postsdb.posts where userId=${user.id}`, (err, result) => {
@@ -69,6 +69,7 @@ app.get("/post", (req, res) => {
             res.json(posts);
         }
     })
+    
 });
 
 //Messaging
@@ -95,10 +96,6 @@ amqp.connect('amqps://pepqwzfo:QdtFkPU3RuBGMfsFlMiXPlI0JylxB1nu@rat.rmq2.cloudam
                 channel.consume(q.queue, function (msg) {
                     if (correlationIds.includes(msg.properties.correlationId)) {
                         console.log(' [.] Got %s', msg.content[2]);
-                        setTimeout(function () {
-                            // connection.close();//s
-                            //process.exit(0);ss
-                        }, 500);
                         const message = JSON.parse(msg.content)
                         console.log(message)
                         const sql = `UPDATE postsdb.posts
@@ -154,6 +151,42 @@ app.post('/messaging', (req, res) => {
     } catch {
         res.status(500).send();
     }
+})
+
+app.delete('/delete', (req, res) => {
+    const user = JSON.parse(req.headers['user']);
+    const sqluser = `DELETE FROM userdb.users WHERE id = ${user.id};`;
+    pool.query(sqluser, (err, res) => {
+        if (err) {
+            console.log(err);
+        }
+        else {
+            console.log("result: " + res)
+        }
+    })
+    const newID = Math.random();
+    const sqlposts = `UPDATE postsdb.posts
+    SET userId = ${newID}
+    WHERE userId = ${user.id};`;
+    pool.query(sqlposts, (err, res) => {
+        if (err) {
+            console.log(err);
+        }
+        else {
+            console.log("result: " + res)
+        }
+    })
+    const sqlprojects = `DELETE FROM projectsdb.projects WHERE userId = ${user.id};`;
+    pool.query(sqlprojects, (err, res) => {
+        if (err) {
+            console.log(err);
+        }
+        else {
+            console.log("result: " + res)
+        }
+    })
+
+    res.sendStatus(204);
 })
 
 function generateUuid() {
