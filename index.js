@@ -17,13 +17,21 @@ const StatusEnum = {
 let consumedChannel = '';
 let correlationIds = [];
 let qu;
-
 //MySQL connection
+//This one is for local env
 const pool = createPool({
-    host: "34.32.226.52",
+    host: "localhost",
     user: "root",
     password: "password"
 })
+
+//MySQL connection
+//This one is for cloud env
+// const pool = createPool({
+//     host: "34.32.226.52",
+//     user: "root",
+//     password: "password"
+// })
 
 //Array of retrieved items; could be deleted
 let posts = [
@@ -42,8 +50,8 @@ let posts = [
 ]
 
 //GET all posts
-app.get('/posts', (req, res) => {
-    pool.query(`select * from postsdb.posts`, (err, result) => {
+app.get('/all', (req, res) => {
+    pool.query(`select * from postsdb.posts where status="approved"`, (err, result) => {
         if (err) {
             console.log(err);
         }
@@ -72,8 +80,9 @@ app.get("/everything", (req, res) => {
     
 });
 
+//TODO: Change amqp link
 //Messaging
-amqp.connect('amqps://pepqwzfo:QdtFkPU3RuBGMfsFlMiXPlI0JylxB1nu@rat.rmq2.cloudamqp.com/pepqwzfo',
+amqp.connect('amqps://rsaictxm:WL_JjhXfSmLKSyTKQDlLGxKhCr70pbFv@rat.rmq2.cloudamqp.com/rsaictxm',
     function (error0, connection) {
         if (error0) {
             throw error0;
