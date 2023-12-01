@@ -1,5 +1,5 @@
 # Set the base image to use for subsequent instructions
-FROM node:alpine
+FROM node:21.2-alpine3.18
 
 # Set the working directory for any subsequent ADD, COPY, CMD, ENTRYPOINT,
 # or RUN instructions that follow it in the Dockerfile
