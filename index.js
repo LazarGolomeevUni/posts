@@ -66,7 +66,6 @@ app.get('/all', (req, res) => {
 //GET posts of particular user
 app.get("/everything", (req, res) => {
     const user = JSON.parse(req.headers['user']);
-    console.log(user)
     pool.query(`select * from postsdb.posts where userId=${user.id}`, (err, result) => {
         if (err) {
             console.log(err);
@@ -77,10 +76,9 @@ app.get("/everything", (req, res) => {
             res.json(posts);
         }
     })
-    
+
 });
 
-//TODO: Change amqp link
 //Messaging
 amqp.connect('amqps://rsaictxm:WL_JjhXfSmLKSyTKQDlLGxKhCr70pbFv@rat.rmq2.cloudamqp.com/rsaictxm',
     function (error0, connection) {
@@ -100,25 +98,21 @@ amqp.connect('amqps://rsaictxm:WL_JjhXfSmLKSyTKQDlLGxKhCr70pbFv@rat.rmq2.cloudam
                 }
                 qu = q;
 
-                console.log(' [x] Requesting fib(%d)');
-
                 channel.consume(q.queue, function (msg) {
-                    if (correlationIds.includes(msg.properties.correlationId)) {
-                        console.log(' [.] Got %s', msg.content[2]);
-                        const message = JSON.parse(msg.content)
-                        console.log(message)
-                        const sql = `UPDATE postsdb.posts
+
+                    const message = JSON.parse(msg.content)
+                    const sql = `UPDATE postsdb.posts
                         SET moderatorID = ${message[1]}, status = '${message[2]}'
                         WHERE id = ${message[0]}`;
-                        pool.query(sql, (err, res) => {
-                            if (err) {
-                                console.log(err);
-                            }
-                            else {
-                                console.log("result: " + res)
-                            }
-                        })
-                    }
+                    pool.query(sql, (err, res) => {
+                        if (err) {
+                            console.log(err);
+                        }
+                        else {
+                            console.log("result: ", res)
+                        }
+                    })
+
                 }, {
                     noAck: true
                 });
@@ -132,31 +126,27 @@ app.post('/messaging', (req, res) => {
     const user = JSON.parse(req.headers['user']);
     try {
         const now = new Date();
-        let insertId;
         const formattedTimestamp = now.toISOString().slice(0, 19).replace('T', ' ');
-        const sql = `INSERT INTO postsdb.posts (userId, projectId, moderatorId, status, timestamp)
-        VALUES (${user.id}, '${req.body.projectId}', 0, '${StatusEnum.PENDING}', '${formattedTimestamp}')`;
+        const title = req.body.title;
+        const text = req.body.text;
+        if (!title || !text) {
+            res.status(500).send();
+        }
+        const sql = `INSERT INTO postsdb.posts (userId, moderatorId, status, timestamp, title, text)
+        VALUES (${user.id}, 0, '${StatusEnum.PENDING}', '${formattedTimestamp}', '${title}', '${text}')`;
         pool.query(sql, (err, response) => {
             if (err) {
                 console.log(err);
                 res.status(500).send();
             }
             else {
-                insertId = response.insertId;
-                // console.log("insertId:", insertId);ss
-                const correlationId = generateUuid();
-                correlationIds.push(correlationId);
+                const insertId = response.insertId;
                 consumedChannel.sendToQueue('rpc_queue', Buffer.from(insertId.toString()), {
-                    correlationId: correlationId,
                     replyTo: qu.queue
                 });
-                // console.log("result: ", res)
                 res.status(201).send();
             }
         })
-        // console.log(consumedChannel)
-
-        
     } catch {
         res.status(500).send();
     }
