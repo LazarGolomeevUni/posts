@@ -10,7 +10,8 @@ COPY package.json /usr/src/app/
 COPY . /usr/src/app/
 
 # Execute any commands on top of the current image as a new layer and commit the results.
-RUN npm install --production
+RUN npm install
+ARG NODE_ENV
 
 # Define the network ports that this container will listen to at runtime.
 EXPOSE 8002

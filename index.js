@@ -15,39 +15,23 @@ const StatusEnum = {
 };
 
 let consumedChannel = '';
-let correlationIds = [];
 let qu;
-//MySQL connection
-//This one is for local env
-const pool = createPool({
-    host: "localhost",
-    user: "root",
-    password: "password"
-})
 
 //MySQL connection
-//This one is for cloud env
+//This one is for local env
 // const pool = createPool({
-//     host: "34.32.226.52",
+//     host: "localhost",
 //     user: "root",
 //     password: "password"
 // })
 
-//Array of retrieved items; could be deleted
-let posts = [
-    {
-        username: 'Lazy',
-        title: 'post 1'
-    },
-    {
-        username: 'Krisi',
-        title: 'post 2'
-    },
-    {
-        username: 'Maya',
-        title: 'post 3'
-    }
-]
+//MySQL connection
+//This one is for cloud env
+const pool = createPool({
+    host: "thelibraryclub.cwahxov3y8ow.eu-north-1.rds.amazonaws.com",
+    user: "lazar",
+    password: "thelibraryclub"
+})
 
 //GET all posts
 app.get('/all', (req, res) => {
@@ -79,7 +63,22 @@ app.get("/everything", (req, res) => {
 
 });
 
-//Messaging
+//GET post for moderation
+app.get("/moderationPost", (req, res) => {
+    pool.query(`select * from postsdb.posts where id=${req.body.id}`, (err, result) => {
+        if (err) {
+            console.log(err);
+        }
+        else {
+            posts = result;
+
+            res.json(posts);
+        }
+    })
+
+});
+
+//Messaging waits to receive data and updates db
 amqp.connect('amqps://rsaictxm:WL_JjhXfSmLKSyTKQDlLGxKhCr70pbFv@rat.rmq2.cloudamqp.com/rsaictxm',
     function (error0, connection) {
         if (error0) {
@@ -120,7 +119,7 @@ amqp.connect('amqps://rsaictxm:WL_JjhXfSmLKSyTKQDlLGxKhCr70pbFv@rat.rmq2.cloudam
         });
     });
 
-
+//Sends post for moderation; Makes first db entry for post
 app.post('/messaging', (req, res) => {
 
     const user = JSON.parse(req.headers['user']);
@@ -154,28 +153,28 @@ app.post('/messaging', (req, res) => {
 
 app.delete('/delete', (req, res) => {
     const user = JSON.parse(req.headers['user']);
-    const sqluser = `DELETE FROM userdb.users WHERE id = ${user.id};`;
-    pool.query(sqluser, (err, res) => {
-        if (err) {
-            console.log(err);
-        }
-        else {
-            console.log("result: " + res)
-        }
-    })
-    const newID = Math.random();
-    const sqlposts = `UPDATE postsdb.posts
-    SET userId = ${newID}
-    WHERE userId = ${user.id};`;
-    pool.query(sqlposts, (err, res) => {
-        if (err) {
-            console.log(err);
-        }
-        else {
-            console.log("result: " + res)
-        }
-    })
-    const sqlprojects = `DELETE FROM projectsdb.projects WHERE userId = ${user.id};`;
+    // const sqluser = `DELETE FROM userdb.users WHERE id = ${user.id};`;
+    // pool.query(sqluser, (err, res) => {
+    //     if (err) {
+    //         console.log(err);
+    //     }
+    //     else {
+    //         console.log("result: " + res)
+    //     }
+    // })
+    // const newID = Math.random();
+    // const sqlposts = `UPDATE postsdb.posts
+    // SET userId = ${newID}
+    // WHERE userId = ${user.id};`;
+    // pool.query(sqlposts, (err, res) => {
+    //     if (err) {
+    //         console.log(err);
+    //     }
+    //     else {
+    //         console.log("result: " + res)
+    //     }
+    // })
+    const sqlprojects = `DELETE FROM postsdb.posts WHERE userId = ${user.id};`;
     pool.query(sqlprojects, (err, res) => {
         if (err) {
             console.log(err);
@@ -188,11 +187,11 @@ app.delete('/delete', (req, res) => {
     res.sendStatus(204);
 })
 
-function generateUuid() {
-    return Math.random().toString() +
-        Math.random().toString() +
-        Math.random().toString();
-}
+// function generateUuid() {
+//     return Math.random().toString() +
+//         Math.random().toString() +
+//         Math.random().toString();
+// }
 
 app.use('/', (req, res, next) => {
     return res.status(200).json({ "msg": "Hello from Posts" })

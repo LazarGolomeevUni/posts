@@ -1,0 +1,28 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: posts-deployment
+  labels:
+    app: posts-microservice
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: posts-microservice
+  template:
+    metadata:
+      labels:
+        app: posts-microservice
+    spec:
+      containers:
+      - name: posts-microservice
+        image: DOCKER_IMAGE
+        ports:
+        - name: http
+          containerPort: 8002
+        imagePullPolicy: Always
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 1
