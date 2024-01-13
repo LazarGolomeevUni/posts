@@ -1,9 +1,14 @@
-name: Build and Deploy to GKE
+name: Deploy
 
 on:
   push:
-    branches:
-      - main
+    branches: [main]
+
+env:
+  DOCKERHUB_REPOSITORY: lazargolomeev
+  K8S_CLUSTER_NAME: the-library-club-CICD-cluster
+  DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+  DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
 
 jobs:
   quality-check:
@@ -17,225 +22,92 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        language: [ 'javascript' ]
+        language: ["javascript"]
         # CodeQL supports [ 'cpp', 'csharp', 'go', 'java', 'javascript', 'python', 'ruby' ]
         # Learn more about CodeQL language support at https://aka.ms/codeql-docs/language-support
 
     steps:
-    - name: Checkout repository
-      uses: actions/checkout@v3
+      - name: Checkout repository
+        uses: actions/checkout@v3
 
-    # Initializes the CodeQL tools for scanning.
-    - name: Initialize CodeQL
-      uses: github/codeql-action/init@v2
-      with:
-        languages: ${{ matrix.language }}
-        # If you wish to specify custom queries, you can do so here or in a config file.
-        # By default, queries listed here will override any specified in a config file.
-        # Prefix the list here with "+" to use these queries and those in the config file.
-        
-        # Details on CodeQL's query packs refer to : https://docs.github.com/en/code-security/code-scanning/automatically-scanning-your-code-for-vulnerabilities-and-errors/configuring-code-scanning#using-queries-in-ql-packs
-        # queries: security-extended,security-and-quality
+      # Initializes the CodeQL tools for scanning.
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v2
+        with:
+          languages: ${{ matrix.language }}
+          # If you wish to specify custom queries, you can do so here or in a config file.
+          # By default, queries listed here will override any specified in a config file.
+          # Prefix the list here with "+" to use these queries and those in the config file.
 
-        
-    # Autobuild attempts to build any compiled languages  (C/C++, C#, or Java).
-    # If this step fails, then you should remove it and run the build manually (see below)
-    - name: Autobuild
-      uses: github/codeql-action/autobuild@v2
+          # Details on CodeQL's query packs refer to : https://docs.github.com/en/code-security/code-scanning/automatically-scanning-your-code-for-vulnerabilities-and-errors/configuring-code-scanning#using-queries-in-ql-packs
+          # queries: security-extended,security-and-quality
 
-    # ℹ️ Command-line programs to run using the OS shell.
-    # 📚 See https://docs.github.com/en/actions/using-workflows/workflow-syntax-for-github-actions#jobsjob_idstepsrun
+      # Autobuild attempts to build any compiled languages  (C/C++, C#, or Java).
+      # If this step fails, then you should remove it and run the build manually (see below)
+      - name: Autobuild
+        uses: github/codeql-action/autobuild@v2
 
-    #   If the Autobuild fails above, remove it and uncomment the following three lines. 
-    #   modify them (or add more) to build your code if your project, please refer to the EXAMPLE below for guidance.
+      # ℹ️ Command-line programs to run using the OS shell.
+      # 📚 See https://docs.github.com/en/actions/using-workflows/workflow-syntax-for-github-actions#jobsjob_idstepsrun
 
-    # - run: |
-    #   echo "Run, Build Application using script"
-    #   ./location_of_script_within_repo/buildscript.sh
+      #   If the Autobuild fails above, remove it and uncomment the following three lines.
+      #   modify them (or add more) to build your code if your project, please refer to the EXAMPLE below for guidance.
 
-    - name: Perform CodeQL Analysis
-      uses: github/codeql-action/analyze@v2
+      # - run: |
+      #   echo "Run, Build Application using script"
+      #   ./location_of_script_within_repo/buildscript.sh
+
+      - name: Perform CodeQL Analysis
+        uses: github/codeql-action/analyze@v2
+
   build:
+    
     needs: quality-check
-    name: Setup, Publish, and Deploy
+    name: Deployment
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v2
+    - name: Set short git commit SHA
+      id: commit
+      uses: prompt/actions-commit-hash@v2
 
-      - name: Set up Node.js
-        uses: actions/setup-node@v2
-        with:
-          node-version: '14'
+    - name: Check out code
+      uses: actions/checkout@v2
 
-      - name: Install Dependencies
-        run: npm install
-  
-  # Test the key
-      - name: Debug API Key
-        run: echo "${{ secrets.GKE_SA_KEY }}"
-      
-  # Authentication to google cloud services
-      - name: Auth
-        id: 'auth'
-        uses: 'google-github-actions/auth@v1.0.0'
-        with:
-          credentials_json: '${{ secrets.GKE_SA_KEY }}'
-          token_format: 'access_token'
-          create_credentials_file: true
-          
-  # Setting up tools for iteracting with google cloud services
-      - name: 'Set up Cloud SDK'
-        uses: 'google-github-actions/setup-gcloud@v0'
-        
-  #Check google cloud connection
-      - name: 'Use gcloud CLI'
-        run: 'gcloud info'
+    # Snyk vulnerability scan
+    - uses: snyk/actions/setup@master
+    - uses: actions/setup-go@v1
+      with:
+        go-version: "1.13"
+    - name: Scan for vulnerabilities with Snyk
+      run: snyk test --severity-threshold=medium || true
+      env:
+        SNYK_TOKEN: ${{ secrets.SNYK_AUTH_TOKEN }}
+      id: snyk-test
 
-      - name: Auth to google cloud services
-        run: |
-          gcloud auth login --brief --cred-file=${{ steps.auth.outputs.credentials_file_path }}
-          gcloud auth configure-docker europe-west4-docker.pkg.dev
+    - name: Login to Docker Hub
+      uses: docker/login-action@v1
+      with:
+        username: ${{ env.DOCKERHUB_USERNAME }}
+        password: ${{ env.DOCKERHUB_TOKEN }}
 
-      - name: Build Docker Image
-        run:
-          docker build -t europe-west4-docker.pkg.dev/portifycloud/posts-repo/posts:v1 .
-      
-      - name: Verify Docker Image
-        run:
-          docker images
+    - name: Build and push Docker image
+      run: |
+        docker build -t $DOCKERHUB_REPOSITORY/posts:${{ github.sha }} .
+        docker push $DOCKERHUB_REPOSITORY/posts:${{ github.sha }}
 
-      # Snyk vulnerability scan
-      - uses: snyk/actions/setup@master
-      - uses: actions/setup-go@v1
-        with:
-          go-version: "1.13"
-      - name: Scan for vulnerabilities with Snyk
-        run: snyk test --severity-threshold=medium || true
-        env:
-          SNYK_TOKEN: ${{ secrets.SNYK_AUTH_TOKEN }}
-        id: snyk-test
+    - name: Configure AWS credentials
+      uses: aws-actions/configure-aws-credentials@v1
+      with:
+        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        aws-region: ${{secrets.AWS_REGION}}
 
-      - name: Push Image to Registry
-        run:
-          docker push europe-west4-docker.pkg.dev/portifycloud/posts-repo/posts:v1 
+    - name: Update kube config
+      run: aws eks update-kubeconfig --name $K8S_CLUSTER_NAME
 
-      - name: Deploy to GKE Cluster
-        run: |
-          gcloud components install gke-gcloud-auth-plugin
-          gcloud container clusters get-credentials authentication-cluster --zone europe-west4
-          sleep 5s
-          kubectl set image deployment/posts posts=europe-west4-docker.pkg.dev/portifycloud/posts-repo/posts:v1 name: Deploy
-
-          on:
-            push:
-              branches: [main]
-          
-          env:
-            DOCKERHUB_REPOSITORY: lazargolomeev
-            K8S_CLUSTER_NAME: the-library-club-CICD-cluster
-            DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
-            DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
-          
-          jobs:
-            quality-check:
-              name: Analyze
-              runs-on: ubuntu-latest
-              permissions:
-                actions: read
-                contents: read
-                security-events: write
-          
-              strategy:
-                fail-fast: false
-                matrix:
-                  language: ["javascript"]
-                  # CodeQL supports [ 'cpp', 'csharp', 'go', 'java', 'javascript', 'python', 'ruby' ]
-                  # Learn more about CodeQL language support at https://aka.ms/codeql-docs/language-support
-          
-              steps:
-                - name: Checkout repository
-                  uses: actions/checkout@v3
-          
-                # Initializes the CodeQL tools for scanning.
-                - name: Initialize CodeQL
-                  uses: github/codeql-action/init@v2
-                  with:
-                    languages: ${{ matrix.language }}
-                    # If you wish to specify custom queries, you can do so here or in a config file.
-                    # By default, queries listed here will override any specified in a config file.
-                    # Prefix the list here with "+" to use these queries and those in the config file.
-          
-                    # Details on CodeQL's query packs refer to : https://docs.github.com/en/code-security/code-scanning/automatically-scanning-your-code-for-vulnerabilities-and-errors/configuring-code-scanning#using-queries-in-ql-packs
-                    # queries: security-extended,security-and-quality
-          
-                # Autobuild attempts to build any compiled languages  (C/C++, C#, or Java).
-                # If this step fails, then you should remove it and run the build manually (see below)
-                - name: Autobuild
-                  uses: github/codeql-action/autobuild@v2
-          
-                # ℹ️ Command-line programs to run using the OS shell.
-                # 📚 See https://docs.github.com/en/actions/using-workflows/workflow-syntax-for-github-actions#jobsjob_idstepsrun
-          
-                #   If the Autobuild fails above, remove it and uncomment the following three lines.
-                #   modify them (or add more) to build your code if your project, please refer to the EXAMPLE below for guidance.
-          
-                # - run: |
-                #   echo "Run, Build Application using script"
-                #   ./location_of_script_within_repo/buildscript.sh
-          
-                - name: Perform CodeQL Analysis
-                  uses: github/codeql-action/analyze@v2
-          
-            build:
-              
-              needs: quality-check
-              name: Deployment
-              runs-on: ubuntu-latest
-          
-              steps:
-              - name: Set short git commit SHA
-                id: commit
-                uses: prompt/actions-commit-hash@v2
-          
-              - name: Check out code
-                uses: actions/checkout@v2
-          
-              # Snyk vulnerability scan
-              - uses: snyk/actions/setup@master
-              - uses: actions/setup-go@v1
-                with:
-                  go-version: "1.13"
-              - name: Scan for vulnerabilities with Snyk
-                run: snyk test --severity-threshold=medium || true
-                env:
-                  SNYK_TOKEN: ${{ secrets.SNYK_AUTH_TOKEN }}
-                id: snyk-test
-          
-              - name: Login to Docker Hub
-                uses: docker/login-action@v1
-                with:
-                  username: ${{ env.DOCKERHUB_USERNAME }}
-                  password: ${{ env.DOCKERHUB_TOKEN }}
-          
-              - name: Build and push Docker image
-                run: |
-                  docker build -t $DOCKERHUB_REPOSITORY/posts:${{ github.sha }} .
-                  docker push $DOCKERHUB_REPOSITORY/posts:${{ github.sha }}
-          
-              - name: Configure AWS credentials
-                uses: aws-actions/configure-aws-credentials@v1
-                with:
-                  aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-                  aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-                  aws-region: ${{secrets.AWS_REGION}}
-          
-              - name: Update kube config
-                run: aws eks update-kubeconfig --name $K8S_CLUSTER_NAME
-          
-              - name: Deploy to Kubernetes
-                run: |
-                  sed -i "s|DOCKER_IMAGE|$DOCKERHUB_REPOSITORY/posts:${{ github.sha }}|g" posts-deployment.yaml && \
-                  kubectl apply -f posts-deployment.yaml
-                  kubectl apply -f posts-service.yaml
-          
+    - name: Deploy to Kubernetes
+      run: |
+        sed -i "s|DOCKER_IMAGE|$DOCKERHUB_REPOSITORY/posts:${{ github.sha }}|g" posts-deployment.yaml && \
+        kubectl apply -f posts-deployment.yaml
+        kubectl apply -f posts-service.yaml
