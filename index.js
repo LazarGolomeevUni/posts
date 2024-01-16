@@ -130,26 +130,56 @@ app.post('/messaging', (req, res) => {
         const text = req.body.text;
         if (!title || !text) {
             res.status(500).send();
+        } else {
+            const sql = `INSERT INTO postsdb.posts (userId, moderatorId, status, timestamp, title, text)
+            VALUES (${user.id}, 0, '${StatusEnum.PENDING}', '${formattedTimestamp}', '${title}', '${text}')`;
+            pool.query(sql, (err, response) => {
+                if (err) {
+                    console.log(err);
+                    res.status(500).send();
+                }
+                else {
+                    const insertId = response.insertId;
+                    sendMessageWithRetry('rpc_queue', Buffer.from(insertId.toString()), {
+                        replyTo: qu.queue
+                    }, 3, 0) // retry 3 times with no delay
+                        .then(() => {
+                            res.status(201).send();
+                        })
+                        .catch((retryError) => {
+                            console.log('Failed after retries', retryError);
+                            // Handle failure after retries, e.g., log, flag in DB, etc.
+                            res.status(500).send();
+                        });
+                }
+            })
         }
-        const sql = `INSERT INTO postsdb.posts (userId, moderatorId, status, timestamp, title, text)
-        VALUES (${user.id}, 0, '${StatusEnum.PENDING}', '${formattedTimestamp}', '${title}', '${text}')`;
-        pool.query(sql, (err, response) => {
-            if (err) {
-                console.log(err);
-                res.status(500).send();
-            }
-            else {
-                const insertId = response.insertId;
-                consumedChannel.sendToQueue('rpc_queue', Buffer.from(insertId.toString()), {
-                    replyTo: qu.queue
-                });
-                res.status(201).send();
-            }
-        })
+
     } catch {
         res.status(500).send();
     }
 })
+
+function sendMessageWithRetry(queue, message, options, maxRetries, delay) {
+    return new Promise((resolve, reject) => {
+        const attemptToSend = (retriesLeft) => {
+            try {
+                consumedChannel.sendToQueue(queue, message, options);
+                resolve();
+            } catch (error) {
+                if (retriesLeft === 0) {
+                    reject(error);
+                } else {
+                    setTimeout(() => {
+                        attemptToSend(retriesLeft - 1);
+                    }, delay);
+                }
+            }
+        };
+
+        attemptToSend(maxRetries);
+    });
+}
 
 app.delete('/delete', (req, res) => {
     const user = JSON.parse(req.headers['user']);
